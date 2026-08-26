@@ -90,7 +90,7 @@ class distribution(CipherBase):
         img_tk = ctk.CTkImage(light_image=img, dark_image=img, size=(img.width, img.height))
         
         img_label = ctk.CTkLabel(self.results_card, image=img_tk, text="")
-        img_label.image = img_tk
+        self._distribution_image = img_tk
         img_label.grid(row=0, column=0, padx=20, pady=20, sticky="ew")
         
         stats_text = "Frequency Analysis:\n\n"
