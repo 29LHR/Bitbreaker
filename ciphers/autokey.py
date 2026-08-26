@@ -30,15 +30,18 @@ def _check_etaoin(text):
     return count >= 8
 
 
-def _vigenere_decrypt_text(text, key):
+def _autokey_decrypt_text(text, keyword):
     decrypted = ""
-    key_length = len(key)
+    key_len = len(keyword)
     key_index = 0
 
-    for char in text:
+    for i, char in enumerate(text):
         if char.isalpha():
             base = ord("A") if char.isupper() else ord("a")
-            key_char = key[key_index % key_length].upper()
+            if key_index < key_len:
+                key_char = keyword[key_index].upper()
+            else:
+                key_char = text[i - key_len].upper()
             shift = ord(key_char) - ord("A")
             decrypted += chr((ord(char) - base - shift) % 26 + base)
             key_index += 1
@@ -48,10 +51,10 @@ def _vigenere_decrypt_text(text, key):
     return decrypted
 
 
-def _scan_key_batch(text, keys, filter_config):
+def _scan_key_batch(text, keywords, filter_config):
     results = []
-    for key in keys:
-        decrypted = _vigenere_decrypt_text(text, key)
+    for keyword in keywords:
+        decrypted = _autokey_decrypt_text(text, keyword)
         lowered = decrypted.lower()
         
         if filter_config["check_ioc"]:
@@ -68,14 +71,14 @@ def _scan_key_batch(text, keys, filter_config):
         if filter_config["check_etaoin"] and not _check_etaoin(decrypted):
             continue
         
-        results.append([key, decrypted])
-        print("Possible decrypt found with key:", key)
+        results.append([keyword, decrypted])
+        print("Possible decrypt found with keyword:", keyword)
     return results
 
 
-class vigenere(CipherBase):
+class autokey(CipherBase):
     def __init__(self, root):
-        super().__init__(root, "Vigenère Cipher", "#9b59b6")
+        super().__init__(root, "Autokey Cipher", "#27ae60")
         self.cpu_target = 0.9
 
     def _worker_count(self):
@@ -105,25 +108,25 @@ class vigenere(CipherBase):
         filter_config = filter_dialog.result
         
         dict_file = "shortwords.json" if dict_dialog.result == "short" else "words.json"
-        
+
         with open(dict_file, "r") as f:
             words = json.load(f)
 
-        keys = list(words.keys())
-        if not keys:
+        keywords = list(words.keys())
+        if not keywords:
             self.show_results([])
             return
 
         workers = self._worker_count()
-        chunk_size = max(500, len(keys) // (workers * 12))
-        chunks = list(self._chunk_keys(keys, chunk_size))
+        chunk_size = max(500, len(keywords) // (workers * 12))
+        chunks = list(self._chunk_keys(keywords, chunk_size))
         total_chunks = len(chunks)
 
-        with open("decrypts/vigenere.txt", "w") as f:
+        with open("decrypts/autokey.txt", "w") as f:
             f.write("")
 
         progress_win = self._create_progress_window(total_chunks)
-        
+
         with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("fork")) as executor:
             futures = [
                 executor.submit(_scan_key_batch, text, batch, filter_config)
@@ -137,35 +140,35 @@ class vigenere(CipherBase):
         progress_win.destroy()
 
         if self.present:
-            with open("decrypts/vigenere.txt", "a") as f:
-                f.writelines(f"Key {key}:\n {decrypted}\n\n\n" for key, decrypted in self.present)
+            with open("decrypts/autokey.txt", "a") as f:
+                f.writelines(f"Keyword {kw}:\n {decrypted}\n\n\n" for kw, decrypted in self.present)
 
         self.show_results(self.present)
         if self.present:
-            self.root.log_activity("Vigenère Cipher", f"Found {len(self.present)} possible decrypt(s)")
+            self.root.log_activity("Autokey Cipher", f"Found {len(self.present)} possible decrypt(s)")
         else:
-            self.root.log_activity("Vigenère Cipher", "No decrypts found")
+            self.root.log_activity("Autokey Cipher", "No decrypts found")
 
     def _create_progress_window(self, total):
         win = ctk.CTkToplevel(self.window)
-        win.title("Vigenère Cipher - Attack Progress")
+        win.title("Autokey Cipher - Attack Progress")
         win.geometry("450x200")
         win.transient(self.window)
         win.grab_set()
         win.grid_columnconfigure(0, weight=1)
         win.grid_rowconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(
             win,
             text="Dictionary Attack in Progress...",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=("gray10", "gray90")
         ).grid(row=0, column=0, pady=(20, 10))
-        
+
         self.progress_bar = ctk.CTkProgressBar(win, width=380, height=20)
         self.progress_bar.grid(row=1, column=0, padx=30, pady=10)
         self.progress_bar.set(0)
-        
+
         self.progress_label = ctk.CTkLabel(
             win,
             text=f"0 / {total} chunks completed",
@@ -173,7 +176,7 @@ class vigenere(CipherBase):
             text_color=("gray40", "gray60")
         )
         self.progress_label.grid(row=2, column=0, pady=(0, 10))
-        
+
         self.progress_found = ctk.CTkLabel(
             win,
             text="Matches found: 0",
@@ -181,7 +184,7 @@ class vigenere(CipherBase):
             text_color=self.accent_color
         )
         self.progress_found.grid(row=3, column=0, pady=(0, 20))
-        
+
         win.update()
         return win
 

@@ -4,102 +4,12 @@ import string
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 
+import customtkinter as ctk
+
 from cipherlib import CipherBase, FilterConfigDialog
 
-PLAYFAIR_SHIFTS = [
-    ('RD', 'Right', 'Down'),
-    ('RU', 'Right', 'Up'),
-    ('RR', 'Right', 'Right'),
-    ('LD', 'Left', 'Down'),
-    ('LU', 'Left', 'Up'),
-    ('LR', 'Left', 'Right'),
-    ('LL', 'Left', 'Left'),
-    ('DD', 'Down', 'Down'),
-    ('DU', 'Down', 'Up'),
-    ('DR', 'Down', 'Right'),
-    ('UD', 'Up', 'Down'),
-    ('UU', 'Up', 'Up'),
-    ('UR', 'Up', 'Right'),
-]
 
-
-def _generate_playfair_matrix(key):
-    key = key.upper().replace("J", "I")
-    matrix = []
-    used = set()
-
-    for char in key:
-        if char not in used and char.isalpha():
-            used.add(char)
-            matrix.append(char)
-
-    for char in string.ascii_uppercase:
-        if char not in used and char != 'J':
-            used.add(char)
-            matrix.append(char)
-
-    result = [matrix[i:i+5] for i in range(0, 25, 5)]
-    pos_cache = {}
-    for i, row in enumerate(result):
-        for j, c in enumerate(row):
-            pos_cache[c] = (i, j)
-    return result, pos_cache
-
-
-def _decrypt_pair(matrix, pos_cache, a, b, row_shift, col_shift):
-    a = a.upper().replace("J", "I")
-    b = b.upper().replace("J", "I")
-
-    pos_a = pos_cache.get(a)
-    pos_b = pos_cache.get(b)
-
-    if pos_a is None or pos_b is None:
-        return ("", "")
-
-    row1, col1 = pos_a
-    row2, col2 = pos_b
-
-    if row1 == row2:
-        match row_shift:
-            case 'Left':
-                return (matrix[row1][(col1 - 1) % 5], matrix[row2][(col2 - 1) % 5])
-            case 'Right':
-                return (matrix[row1][(col1 + 1) % 5], matrix[row2][(col2 + 1) % 5])
-            case 'Down':
-                return (matrix[(row1 + 1) % 5][col1], matrix[(row2 + 1) % 5][col2])
-            case 'Up':
-                return (matrix[(row1 - 1) % 5][col1], matrix[(row2 - 1) % 5][col2])
-            case _:
-                return (matrix[row1][(col1 + 1) % 5], matrix[row2][(col2 + 1) % 5])
-
-    elif col1 == col2:
-        match col_shift:
-            case 'Left':
-                return (matrix[row1][(col1 - 1) % 5], matrix[row2][(col2 - 1) % 5])
-            case 'Right':
-                return (matrix[row1][(col1 + 1) % 5], matrix[row2][(col2 + 1) % 5])
-            case 'Down':
-                return (matrix[(row1 + 1) % 5][col1], matrix[(row2 + 1) % 5][col2])
-            case 'Up':
-                return (matrix[(row1 - 1) % 5][col1], matrix[(row2 - 1) % 5][col2])
-            case _:
-                return (matrix[(row1 + 1) % 5][col1], matrix[(row2 + 1) % 5][col2])
-
-    return (matrix[row1][col2], matrix[row2][col1])
-
-
-def _playfair_decrypt_text(text, key, row_shift, col_shift):
-    matrix, pos_cache = _generate_playfair_matrix(key)
-    text = text.upper().replace("J", "I").replace(" ", "")
-    plaintext = ""
-    i = 0
-    while i < len(text):
-        a = text[i]
-        b = text[i + 1] if i + 1 < len(text) else 'X'
-        i += 2
-        p1, p2 = _decrypt_pair(matrix, pos_cache, a, b, row_shift, col_shift)
-        plaintext += p1 + p2
-    return plaintext.lower()
+ADFGVX_CHARS = ['A', 'D', 'F', 'G', 'V', 'X']
 
 
 def _check_ioc(text):
@@ -124,11 +34,105 @@ def _check_etaoin(text):
     return count >= 8
 
 
-def _scan_key_batch(text, keys, filter_config):
+def _generate_polybius_square(key):
+    key = key.upper().replace('J', 'I')
+    used = set()
+    alphabet = []
+    
+    for ch in key:
+        if ch not in used and ch.isalpha():
+            used.add(ch)
+            alphabet.append(ch)
+    
+    for ch in string.ascii_uppercase:
+        if ch != 'J' and ch not in used:
+            used.add(ch)
+            alphabet.append(ch)
+    
+    for ch in '0123456789':
+        if ch not in used:
+            used.add(ch)
+            alphabet.append(ch)
+    
+    square = {}
+    reverse = {}
+    for i, ch in enumerate(alphabet):
+        row = i // 6
+        col = i % 6
+        square[ch] = ADFGVX_CHARS[row] + ADFGVX_CHARS[col]
+        reverse[ADFGVX_CHARS[row] + ADFGVX_CHARS[col]] = ch
+    
+    return square, reverse
+
+
+def _adfgvx_decrypt_text(text, polybius_key, transposition_key):
+    polybius_square, reverse_square = _generate_polybius_square(polybius_key)
+    
+    text = text.upper().replace('J', 'I')
+    fractionated = ""
+    for ch in text:
+        if ch in polybius_square:
+            fractionated += polybius_square[ch]
+    
+    key = [int(k) for k in str(transposition_key)]
+    num_cols = len(key)
+    num_rows = len(fractionated) // num_cols
+    
+    col_lengths = [num_rows] * num_cols
+    remainder = len(fractionated) % num_cols
+    if remainder:
+        sorted_key = sorted(enumerate(key), key=lambda x: x[1])
+        for i in range(remainder):
+            col_lengths[sorted_key[i][0]] += 1
+    
+    cols = []
+    idx = 0
+    for length in col_lengths:
+        cols.append(fractionated[idx:idx + length])
+        idx += length
+    
+    sorted_key = sorted(enumerate(key), key=lambda x: x[1])
+    ordered_cols = [''] * num_cols
+    for rank, (orig_idx, _) in enumerate(sorted_key):
+        ordered_cols[orig_idx] = cols[rank]
+    
+    result = []
+    for row in range(max(col_lengths)):
+        for col in range(num_cols):
+            if row < len(ordered_cols[col]):
+                result.append(ordered_cols[col][row])
+    
+    defractionated = ''.join(result)
+    
+    plaintext = ""
+    for i in range(0, len(defractionated), 2):
+        pair = defractionated[i:i+2]
+        if pair in reverse_square:
+            plaintext += reverse_square[pair]
+        else:
+            plaintext += '?'
+    
+    return plaintext.lower()
+
+
+def _scan_key_batch(text, polybius_keys, transposition_keys, filter_config):
     results = []
-    for key in keys:
-        for shift_name, row_shift, col_shift in PLAYFAIR_SHIFTS:
-            decrypted = _playfair_decrypt_text(text, key, row_shift, col_shift)
+    for polybius_key in polybius_keys:
+        polybius_square, reverse_square = _generate_polybius_square(polybius_key)
+        
+        text_clean = text.upper().replace('J', 'I')
+        fractionated = ""
+        for ch in text_clean:
+            if ch in polybius_square:
+                fractionated += polybius_square[ch]
+        
+        for transposition_key in transposition_keys:
+            key = [int(k) for k in str(transposition_key)]
+            num_cols = len(key)
+            if len(fractionated) % num_cols != 0 and len(fractionated) < num_cols * 2:
+                continue
+            
+            decrypted = _adfgvx_decrypt_text(text, polybius_key, transposition_key)
             lowered = decrypted.lower()
             
             if filter_config["check_ioc"]:
@@ -145,14 +149,15 @@ def _scan_key_batch(text, keys, filter_config):
             if filter_config["check_etaoin"] and not _check_etaoin(decrypted):
                 continue
             
-            results.append([f"{key} ({shift_name})", decrypted])
-            print(f"Possible decrypt found with key: {key} ({shift_name})")
+            key_desc = f"Polybius:{polybius_key} Trans:{transposition_key}"
+            results.append([key_desc, decrypted])
+            print("Possible decrypt found with key:", key_desc)
     return results
 
 
-class playfair(CipherBase):
+class adfgvx(CipherBase):
     def __init__(self, root):
-        super().__init__(root, "Playfair Cipher", "#e74c3c")
+        super().__init__(root, "ADFGVX Cipher", "#c0392b")
         self.cpu_target = 0.9
 
     def _worker_count(self):
@@ -185,25 +190,36 @@ class playfair(CipherBase):
         
         with open(dict_file, "r") as f:
             words = json.load(f)
-
-        keys = list(words.keys())
-        if not keys:
+        
+        polybius_keys = list(words.keys())[:1000]
+        
+        transposition_keys = []
+        for length in range(3, 8):
+            from itertools import permutations
+            for perm in permutations(range(length)):
+                transposition_keys.append(''.join(map(str, perm)))
+                if len(transposition_keys) >= 500:
+                    break
+            if len(transposition_keys) >= 500:
+                break
+        
+        if not polybius_keys or not transposition_keys:
             self.show_results([])
             return
 
         workers = self._worker_count()
-        chunk_size = max(500, len(keys) // (workers * 12))
-        chunks = list(self._chunk_keys(keys, chunk_size))
+        chunk_size = max(10, len(polybius_keys) // workers)
+        chunks = list(self._chunk_keys(polybius_keys, chunk_size))
         total_chunks = len(chunks)
 
-        with open("decrypts/playfair.txt", "w") as f:
+        with open("decrypts/adfgvx.txt", "w") as f:
             f.write("")
 
         progress_win = self._create_progress_window(total_chunks)
-        
+
         with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("fork")) as executor:
             futures = [
-                executor.submit(_scan_key_batch, text, batch, filter_config)
+                executor.submit(_scan_key_batch, text, batch, transposition_keys, filter_config)
                 for batch in chunks
             ]
 
@@ -214,36 +230,35 @@ class playfair(CipherBase):
         progress_win.destroy()
 
         if self.present:
-            with open("decrypts/playfair.txt", "a") as f:
+            with open("decrypts/adfgvx.txt", "a") as f:
                 f.writelines(f"Key {key}:\n {decrypted}\n\n\n" for key, decrypted in self.present)
 
         self.show_results(self.present)
         if self.present:
-            self.root.log_activity("Playfair Cipher", f"Found {len(self.present)} possible decrypt(s)")
+            self.root.log_activity("ADFGVX Cipher", f"Found {len(self.present)} possible decrypt(s)")
         else:
-            self.root.log_activity("Playfair Cipher", "No decrypts found")
+            self.root.log_activity("ADFGVX Cipher", "No decrypts found")
 
     def _create_progress_window(self, total):
-        import customtkinter as ctk
         win = ctk.CTkToplevel(self.window)
-        win.title("Playfair Cipher - Attack Progress")
+        win.title("ADFGVX Cipher - Attack Progress")
         win.geometry("450x200")
         win.transient(self.window)
         win.grab_set()
         win.grid_columnconfigure(0, weight=1)
         win.grid_rowconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(
             win,
             text="Dictionary Attack in Progress...",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=("gray10", "gray90")
         ).grid(row=0, column=0, pady=(20, 10))
-        
+
         self.progress_bar = ctk.CTkProgressBar(win, width=380, height=20)
         self.progress_bar.grid(row=1, column=0, padx=30, pady=10)
         self.progress_bar.set(0)
-        
+
         self.progress_label = ctk.CTkLabel(
             win,
             text=f"0 / {total} chunks completed",
@@ -251,7 +266,7 @@ class playfair(CipherBase):
             text_color=("gray40", "gray60")
         )
         self.progress_label.grid(row=2, column=0, pady=(0, 10))
-        
+
         self.progress_found = ctk.CTkLabel(
             win,
             text="Matches found: 0",
@@ -259,7 +274,7 @@ class playfair(CipherBase):
             text_color=self.accent_color
         )
         self.progress_found.grid(row=3, column=0, pady=(0, 20))
-        
+
         win.update()
         return win
 

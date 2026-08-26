@@ -326,6 +326,177 @@ class CipherTextDialog(ctk.CTkToplevel):
         self.destroy()
 
 
+class FilterConfigDialog(ctk.CTkToplevel):
+    def __init__(self, parent, accent_color):
+        super().__init__(parent)
+        self.result = None
+        self.accent_color = accent_color
+        self.accent_hover = self._darken_color(accent_color)
+        
+        self.title("Filter Configuration")
+        self.geometry("420x420")
+        self.transient(parent)
+        self.grab_set()
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        
+        header = ctk.CTkFrame(self, fg_color=accent_color, corner_radius=12)
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=16)
+        header.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(
+            header,
+            text="Filter Configuration",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="white"
+        ).grid(row=0, column=0, pady=16)
+        
+        content = ctk.CTkFrame(self, fg_color="transparent")
+        content.grid(row=1, column=0, padx=20, pady=16, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(
+            content,
+            text="Enable checks for candidate filtering:",
+            font=ctk.CTkFont(size=13),
+            text_color=("gray30", "gray70")
+        ).grid(row=0, column=0, sticky="w", pady=(0, 16))
+        
+        self.check_ioc = ctk.BooleanVar(value=True)
+        self.check_the = ctk.BooleanVar(value=True)
+        self.check_and = ctk.BooleanVar(value=True)
+        self.check_etaoin = ctk.BooleanVar(value=False)
+        
+        ioc_frame = ctk.CTkFrame(content, fg_color="transparent")
+        ioc_frame.grid(row=1, column=0, sticky="ew", pady=4)
+        ioc_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkCheckBox(
+            ioc_frame,
+            text="Index of Coincidence (IoC)",
+            variable=self.check_ioc,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray10", "gray90")
+        ).grid(row=0, column=0, sticky="w")
+        
+        ctk.CTkLabel(
+            ioc_frame,
+            text="Range:",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray50")
+        ).grid(row=0, column=1, sticky="e", padx=(10, 4))
+        
+        self.ioc_min = ctk.StringVar(value="0.06")
+        self.ioc_max = ctk.StringVar(value="0.07")
+        
+        ctk.CTkEntry(
+            ioc_frame,
+            textvariable=self.ioc_min,
+            width=60,
+            height=28,
+            font=ctk.CTkFont(size=11)
+        ).grid(row=0, column=2, padx=(0, 2))
+        
+        ctk.CTkLabel(ioc_frame, text="-", font=ctk.CTkFont(size=11)).grid(row=0, column=3, padx=2)
+        
+        ctk.CTkEntry(
+            ioc_frame,
+            textvariable=self.ioc_max,
+            width=60,
+            height=28,
+            font=ctk.CTkFont(size=11)
+        ).grid(row=0, column=4, padx=(2, 0))
+        
+        ctk.CTkCheckBox(
+            content,
+            text="Contains 'the'",
+            variable=self.check_the,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray10", "gray90")
+        ).grid(row=2, column=0, sticky="w", pady=4)
+        
+        ctk.CTkCheckBox(
+            content,
+            text="Contains 'and'",
+            variable=self.check_and,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray10", "gray90")
+        ).grid(row=3, column=0, sticky="w", pady=4)
+        
+        ctk.CTkCheckBox(
+            content,
+            text="Contains common letters (etaoin shrdlu)",
+            variable=self.check_etaoin,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray10", "gray90")
+        ).grid(row=4, column=0, sticky="w", pady=4)
+        
+        ctk.CTkLabel(
+            content,
+            text="At least one check must be enabled",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray50")
+        ).grid(row=5, column=0, sticky="w", pady=(16, 0))
+        
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
+        btn_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=36,
+            corner_radius=8,
+            fg_color=SECONDARY_BG[0],
+            hover_color=SECONDARY_HOVER[0],
+            text_color=TITLE_FG,
+            command=self.cancel
+        ).grid(row=0, column=0, padx=(0, 8), sticky="e")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Start Attack",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=36,
+            corner_radius=8,
+            fg_color=self.accent_color,
+            hover_color=self.accent_hover,
+            command=self.start
+        ).grid(row=0, column=1, sticky="e")
+    
+    def _darken_color(self, hex_color):
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        factor = 0.8
+        r, g, b = int(r * factor), int(g * factor), int(b * factor)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def start(self):
+        if not (self.check_ioc.get() or self.check_the.get() or self.check_and.get() or self.check_etaoin.get()):
+            return
+        try:
+            ioc_min = float(self.ioc_min.get())
+            ioc_max = float(self.ioc_max.get())
+            if ioc_min >= ioc_max or ioc_min < 0 or ioc_max > 1:
+                return
+        except ValueError:
+            return
+        self.result = {
+            "check_ioc": self.check_ioc.get(),
+            "ioc_min": float(self.ioc_min.get()),
+            "ioc_max": float(self.ioc_max.get()),
+            "check_the": self.check_the.get(),
+            "check_and": self.check_and.get(),
+            "check_etaoin": self.check_etaoin.get(),
+        }
+        self.destroy()
+    
+    def cancel(self):
+        self.result = None
+        self.destroy()
+
+
 class DictionaryDialog(ctk.CTkToplevel):
     def __init__(self, parent, accent_color):
         super().__init__(parent)

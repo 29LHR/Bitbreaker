@@ -2,7 +2,7 @@ import customtkinter as ctk
 
 from analysis import distribution, ioc
 from cipherlib import DictionaryDialog
-from ciphers import affine, caesar, playfair, vigenere
+from ciphers import adfgvx, affine, autokey, beaufort, caesar, hill, jefferson, playfair, transposition, vigenere
 
 ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("blue")
@@ -194,7 +194,7 @@ class CodebreakerDashboard(ctk.CTk):
         stats_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
         stats = [
-            ("🔤", "Classical Ciphers", "4 Available", "Caesar, Affine, Vigenère, Playfair"),
+            ("🔤", "Classical Ciphers", "10 Available", "Caesar, Affine, Vigenère, Beaufort, Autokey, Playfair, Transposition, Hill, ADFGVX, Jefferson"),
             ("📊", "Analysis Tools", "2 Tools", "IoC, Letter Distribution"),
             ("📁", "Cipher Text", "Ready", "Loaded from cipherText.txt"),
         ]
@@ -389,16 +389,27 @@ class CodebreakerDashboard(ctk.CTk):
             ("🔄", "Caesar Cipher", "Shift cipher (ROT-N)", "Simple substitution with fixed shift", "#1f6aa5", lambda: caesar.caesar(self)),
             ("🔐", "Affine Cipher", "ax + b (mod 26)", "Multiplicative + additive substitution", "#107c41", lambda: affine.affine(self)),
             ("🗝️", "Vigenère Cipher", "Polyalphabetic", "Dictionary-based key search", "#9b59b6", lambda: vigenere.vigenere(self)),
+            ("🌊", "Beaufort Cipher", "Reciprocal polyalphabetic", "Dictionary-based key search", "#8e44ad", lambda: beaufort.beaufort(self)),
+            ("🔑", "Autokey Cipher", "Key = keyword + ciphertext", "Dictionary-based keyword search", "#27ae60", lambda: autokey.autokey(self)),
             ("🔤", "Playfair Cipher", "Digraph substitution", "Dictionary-based key search, all variants", "#e74c3c", lambda: playfair.playfair(self)),
+            ("↔️", "Transposition Cipher", "Columnar transposition", "Permutation-based key search", "#34495e", lambda: transposition.transposition(self)),
+            ("📐", "Hill Cipher", "Matrix-based (2x2/3x3)", "Linear algebra with mod 26", "#8e44ad", lambda: hill.hill(self)),
+            ("📋", "ADFGVX Cipher", "Fractionating + transposition", "WW1 German field cipher", "#c0392b", lambda: adfgvx.adfgvx(self)),
+            ("🔘", "Jefferson Disk", "Multi-disk mechanical", "Historical wheel cipher (36 disks)", "#2c3e50", lambda: jefferson.jefferson(self)),
         ]
         
         grid = ctk.CTkFrame(self.content_area, fg_color="transparent")
         grid.grid(row=1, column=0, sticky="nsew")
-        grid.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        grid.grid_columnconfigure((0, 1, 2), weight=1)
+        grid.grid_rowconfigure((0, 1, 2, 3), weight=1)
         
         for idx, (icon, name, subtitle, desc, color, cmd) in enumerate(ciphers):
+            row = idx // 3
+            col = idx % 3
             card = self._create_cipher_card(grid, icon, name, subtitle, desc, color, cmd)
-            card.grid(row=0, column=idx, padx=(0, 16) if idx < 3 else 0, sticky="nsew")
+            padx = (0, 16) if col < 2 else 0
+            pady = (0, 16) if row < 3 else 0
+            card.grid(row=row, column=col, padx=padx, pady=pady, sticky="nsew")
 
     def _create_cipher_card(self, parent, icon, name, subtitle, desc, color, cmd):
         card = ctk.CTkFrame(parent, corner_radius=16, fg_color=("white", "gray17"))

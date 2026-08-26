@@ -1,11 +1,16 @@
 import json
 import os
+import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 
 import customtkinter as ctk
 
 from cipherlib import CipherBase, FilterConfigDialog
+
+
+DISK_COUNT = 36
+DISK_LETTERS = 26
 
 
 def _check_ioc(text):
@@ -30,52 +35,86 @@ def _check_etaoin(text):
     return count >= 8
 
 
-def _vigenere_decrypt_text(text, key):
-    decrypted = ""
-    key_length = len(key)
-    key_index = 0
-
-    for char in text:
-        if char.isalpha():
-            base = ord("A") if char.isupper() else ord("a")
-            key_char = key[key_index % key_length].upper()
-            shift = ord(key_char) - ord("A")
-            decrypted += chr((ord(char) - base - shift) % 26 + base)
-            key_index += 1
-        else:
-            decrypted += char
-
-    return decrypted
+def _generate_standard_disks():
+    base = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    disks = []
+    for i in range(DISK_COUNT):
+        disk = list(base)
+        random.seed(i * 12345)
+        random.shuffle(disk)
+        disks.append(''.join(disk))
+    return disks
 
 
-def _scan_key_batch(text, keys, filter_config):
+def _jefferson_decrypt_text(text, disk_order, disk_offsets):
+    disks = _generate_standard_disks()
+    ordered_disks = [disks[i] for i in disk_order]
+    
+    clean = ''.join(c.upper() for c in text if c.isalpha())
+    result = []
+    
+    for i, ch in enumerate(clean):
+        disk_idx = i % DISK_COUNT
+        disk = ordered_disks[disk_idx]
+        offset = disk_offsets[disk_idx]
+        
+        pos = disk.find(ch)
+        if pos == -1:
+            result.append('?')
+            continue
+        
+        plain_pos = (pos - offset) % DISK_LETTERS
+        result.append(disk[plain_pos])
+    
+    return ''.join(result).lower()
+
+
+def _generate_disk_orders(max_orders):
+    from itertools import permutations, islice
+    base_order = list(range(min(6, DISK_COUNT)))
+    orders = list(islice(permutations(base_order), max_orders))
+    return [list(o) for o in orders]
+
+
+def _generate_disk_offsets(num_disks, max_offsets):
+    offsets_list = []
+    for _ in range(max_offsets):
+        offsets = [random.randint(0, 25) for _ in range(num_disks)]
+        offsets_list.append(offsets)
+    return offsets_list
+
+
+def _scan_key_batch(text, disk_orders, disk_offsets_list, filter_config):
     results = []
-    for key in keys:
-        decrypted = _vigenere_decrypt_text(text, key)
-        lowered = decrypted.lower()
-        
-        if filter_config["check_ioc"]:
-            ioc = _check_ioc(decrypted)
-            if not (filter_config["ioc_min"] < ioc < filter_config["ioc_max"]):
+    for disk_order in disk_orders:
+        num_disks = len(disk_order)
+        for offsets in disk_offsets_list:
+            decrypted = _jefferson_decrypt_text(text, disk_order, offsets)
+            lowered = decrypted.lower()
+            
+            if filter_config["check_ioc"]:
+                ioc = _check_ioc(decrypted)
+                if not (filter_config["ioc_min"] < ioc < filter_config["ioc_max"]):
+                    continue
+            
+            if filter_config["check_the"] and "the" not in lowered:
                 continue
-        
-        if filter_config["check_the"] and "the" not in lowered:
-            continue
-        
-        if filter_config["check_and"] and "and" not in lowered:
-            continue
-        
-        if filter_config["check_etaoin"] and not _check_etaoin(decrypted):
-            continue
-        
-        results.append([key, decrypted])
-        print("Possible decrypt found with key:", key)
+            
+            if filter_config["check_and"] and "and" not in lowered:
+                continue
+            
+            if filter_config["check_etaoin"] and not _check_etaoin(decrypted):
+                continue
+            
+            key_desc = f"Order:{disk_order} Offsets:{offsets}"
+            results.append([key_desc, decrypted])
+            print("Possible decrypt found with key:", key_desc)
     return results
 
 
-class vigenere(CipherBase):
+class jefferson(CipherBase):
     def __init__(self, root):
-        super().__init__(root, "Vigenère Cipher", "#9b59b6")
+        super().__init__(root, "Jefferson Disk Cipher", "#2c3e50")
         self.cpu_target = 0.9
 
     def _worker_count(self):
@@ -104,29 +143,31 @@ class vigenere(CipherBase):
         
         filter_config = filter_dialog.result
         
-        dict_file = "shortwords.json" if dict_dialog.result == "short" else "words.json"
+        clean_text = ''.join(c for c in text if c.isalpha())
+        if len(clean_text) < 10:
+            self.show_results([])
+            return
         
-        with open(dict_file, "r") as f:
-            words = json.load(f)
-
-        keys = list(words.keys())
-        if not keys:
+        disk_orders = _generate_disk_orders(500)
+        disk_offsets_list = _generate_disk_offsets(6, 100)
+        
+        if not disk_orders or not disk_offsets_list:
             self.show_results([])
             return
 
         workers = self._worker_count()
-        chunk_size = max(500, len(keys) // (workers * 12))
-        chunks = list(self._chunk_keys(keys, chunk_size))
+        chunk_size = max(10, len(disk_orders) // workers)
+        chunks = list(self._chunk_keys(disk_orders, chunk_size))
         total_chunks = len(chunks)
 
-        with open("decrypts/vigenere.txt", "w") as f:
+        with open("decrypts/jefferson.txt", "w") as f:
             f.write("")
 
         progress_win = self._create_progress_window(total_chunks)
-        
+
         with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("fork")) as executor:
             futures = [
-                executor.submit(_scan_key_batch, text, batch, filter_config)
+                executor.submit(_scan_key_batch, clean_text, batch, disk_offsets_list, filter_config)
                 for batch in chunks
             ]
 
@@ -137,35 +178,35 @@ class vigenere(CipherBase):
         progress_win.destroy()
 
         if self.present:
-            with open("decrypts/vigenere.txt", "a") as f:
+            with open("decrypts/jefferson.txt", "a") as f:
                 f.writelines(f"Key {key}:\n {decrypted}\n\n\n" for key, decrypted in self.present)
 
         self.show_results(self.present)
         if self.present:
-            self.root.log_activity("Vigenère Cipher", f"Found {len(self.present)} possible decrypt(s)")
+            self.root.log_activity("Jefferson Disk Cipher", f"Found {len(self.present)} possible decrypt(s)")
         else:
-            self.root.log_activity("Vigenère Cipher", "No decrypts found")
+            self.root.log_activity("Jefferson Disk Cipher", "No decrypts found")
 
     def _create_progress_window(self, total):
         win = ctk.CTkToplevel(self.window)
-        win.title("Vigenère Cipher - Attack Progress")
+        win.title("Jefferson Disk Cipher - Attack Progress")
         win.geometry("450x200")
         win.transient(self.window)
         win.grab_set()
         win.grid_columnconfigure(0, weight=1)
         win.grid_rowconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(
             win,
             text="Dictionary Attack in Progress...",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=("gray10", "gray90")
         ).grid(row=0, column=0, pady=(20, 10))
-        
+
         self.progress_bar = ctk.CTkProgressBar(win, width=380, height=20)
         self.progress_bar.grid(row=1, column=0, padx=30, pady=10)
         self.progress_bar.set(0)
-        
+
         self.progress_label = ctk.CTkLabel(
             win,
             text=f"0 / {total} chunks completed",
@@ -173,7 +214,7 @@ class vigenere(CipherBase):
             text_color=("gray40", "gray60")
         )
         self.progress_label.grid(row=2, column=0, pady=(0, 10))
-        
+
         self.progress_found = ctk.CTkLabel(
             win,
             text="Matches found: 0",
@@ -181,7 +222,7 @@ class vigenere(CipherBase):
             text_color=self.accent_color
         )
         self.progress_found.grid(row=3, column=0, pady=(0, 20))
-        
+
         win.update()
         return win
 

@@ -1,5 +1,6 @@
 import json
 import os
+import math
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 
@@ -30,28 +31,42 @@ def _check_etaoin(text):
     return count >= 8
 
 
-def _vigenere_decrypt_text(text, key):
-    decrypted = ""
-    key_length = len(key)
-    key_index = 0
-
-    for char in text:
-        if char.isalpha():
-            base = ord("A") if char.isupper() else ord("a")
-            key_char = key[key_index % key_length].upper()
-            shift = ord(key_char) - ord("A")
-            decrypted += chr((ord(char) - base - shift) % 26 + base)
-            key_index += 1
-        else:
-            decrypted += char
-
-    return decrypted
+def _transposition_decrypt_text(text, key):
+    key = [int(k) for k in str(key)]
+    num_cols = len(key)
+    num_rows = math.ceil(len(text) / num_cols)
+    
+    col_lengths = [num_rows] * num_cols
+    remainder = len(text) % num_cols
+    if remainder:
+        sorted_key = sorted(enumerate(key), key=lambda x: x[1])
+        for i in range(remainder):
+            col_lengths[sorted_key[i][0]] = num_rows - 1
+    
+    cols = []
+    idx = 0
+    for length in col_lengths:
+        cols.append(text[idx:idx + length])
+        idx += length
+    
+    sorted_key = sorted(enumerate(key), key=lambda x: x[1])
+    ordered_cols = [''] * num_cols
+    for rank, (orig_idx, _) in enumerate(sorted_key):
+        ordered_cols[orig_idx] = cols[rank]
+    
+    result = []
+    for row in range(num_rows):
+        for col in range(num_cols):
+            if row < len(ordered_cols[col]):
+                result.append(ordered_cols[col][row])
+    
+    return ''.join(result)
 
 
 def _scan_key_batch(text, keys, filter_config):
     results = []
     for key in keys:
-        decrypted = _vigenere_decrypt_text(text, key)
+        decrypted = _transposition_decrypt_text(text, key)
         lowered = decrypted.lower()
         
         if filter_config["check_ioc"]:
@@ -68,14 +83,25 @@ def _scan_key_batch(text, keys, filter_config):
         if filter_config["check_etaoin"] and not _check_etaoin(decrypted):
             continue
         
-        results.append([key, decrypted])
+        results.append([str(key), decrypted])
         print("Possible decrypt found with key:", key)
     return results
 
 
-class vigenere(CipherBase):
+def _generate_keys(max_key_length, num_keys):
+    keys = []
+    for length in range(2, max_key_length + 1):
+        from itertools import permutations
+        for perm in permutations(range(length)):
+            keys.append(''.join(map(str, perm)))
+            if len(keys) >= num_keys:
+                return keys
+    return keys
+
+
+class transposition(CipherBase):
     def __init__(self, root):
-        super().__init__(root, "Vigenère Cipher", "#9b59b6")
+        super().__init__(root, "Transposition Cipher", "#34495e")
         self.cpu_target = 0.9
 
     def _worker_count(self):
@@ -104,29 +130,31 @@ class vigenere(CipherBase):
         
         filter_config = filter_dialog.result
         
-        dict_file = "shortwords.json" if dict_dialog.result == "short" else "words.json"
+        clean_text = ''.join(c for c in text if c.isalpha())
+        max_key_length = min(10, len(clean_text) // 2)
         
-        with open(dict_file, "r") as f:
-            words = json.load(f)
-
-        keys = list(words.keys())
+        if max_key_length < 2:
+            self.show_results([])
+            return
+        
+        keys = _generate_keys(max_key_length, 50000)
         if not keys:
             self.show_results([])
             return
 
         workers = self._worker_count()
-        chunk_size = max(500, len(keys) // (workers * 12))
+        chunk_size = max(100, len(keys) // (workers * 4))
         chunks = list(self._chunk_keys(keys, chunk_size))
         total_chunks = len(chunks)
 
-        with open("decrypts/vigenere.txt", "w") as f:
+        with open("decrypts/transposition.txt", "w") as f:
             f.write("")
 
         progress_win = self._create_progress_window(total_chunks)
-        
+
         with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("fork")) as executor:
             futures = [
-                executor.submit(_scan_key_batch, text, batch, filter_config)
+                executor.submit(_scan_key_batch, clean_text, batch, filter_config)
                 for batch in chunks
             ]
 
@@ -137,35 +165,35 @@ class vigenere(CipherBase):
         progress_win.destroy()
 
         if self.present:
-            with open("decrypts/vigenere.txt", "a") as f:
+            with open("decrypts/transposition.txt", "a") as f:
                 f.writelines(f"Key {key}:\n {decrypted}\n\n\n" for key, decrypted in self.present)
 
         self.show_results(self.present)
         if self.present:
-            self.root.log_activity("Vigenère Cipher", f"Found {len(self.present)} possible decrypt(s)")
+            self.root.log_activity("Transposition Cipher", f"Found {len(self.present)} possible decrypt(s)")
         else:
-            self.root.log_activity("Vigenère Cipher", "No decrypts found")
+            self.root.log_activity("Transposition Cipher", "No decrypts found")
 
     def _create_progress_window(self, total):
         win = ctk.CTkToplevel(self.window)
-        win.title("Vigenère Cipher - Attack Progress")
+        win.title("Transposition Cipher - Attack Progress")
         win.geometry("450x200")
         win.transient(self.window)
         win.grab_set()
         win.grid_columnconfigure(0, weight=1)
         win.grid_rowconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(
             win,
             text="Dictionary Attack in Progress...",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=("gray10", "gray90")
         ).grid(row=0, column=0, pady=(20, 10))
-        
+
         self.progress_bar = ctk.CTkProgressBar(win, width=380, height=20)
         self.progress_bar.grid(row=1, column=0, padx=30, pady=10)
         self.progress_bar.set(0)
-        
+
         self.progress_label = ctk.CTkLabel(
             win,
             text=f"0 / {total} chunks completed",
@@ -173,7 +201,7 @@ class vigenere(CipherBase):
             text_color=("gray40", "gray60")
         )
         self.progress_label.grid(row=2, column=0, pady=(0, 10))
-        
+
         self.progress_found = ctk.CTkLabel(
             win,
             text="Matches found: 0",
@@ -181,7 +209,7 @@ class vigenere(CipherBase):
             text_color=self.accent_color
         )
         self.progress_found.grid(row=3, column=0, pady=(0, 20))
-        
+
         win.update()
         return win
 

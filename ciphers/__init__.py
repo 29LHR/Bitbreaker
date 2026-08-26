@@ -1,3 +1,3 @@
-from . import affine, caesar, playfair, vigenere
+from . import adfgvx, affine, autokey, beaufort, caesar, hill, jefferson, playfair, transposition, vigenere
 
-__all__ = ["affine", "caesar", "playfair", "vigenere"]
+__all__ = ["adfgvx", "affine", "autokey", "beaufort", "caesar", "hill", "jefferson", "playfair", "transposition", "vigenere"]
