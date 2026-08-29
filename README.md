@@ -1,4 +1,4 @@
-# Codebreaker
+# Bitbreaker
 
 A cryptography dashboard for classical cipher decryption and analysis, built with Python and CustomTkinter.
 
