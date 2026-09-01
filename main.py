@@ -11,7 +11,7 @@ class CodebreakerDashboard(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        self.title("Codebreaker")
+        self.title("Bitbreaker")
         self.geometry("1100x700")
         self.minsize(900, 600)
         
@@ -40,7 +40,7 @@ class CodebreakerDashboard(ctk.CTk):
         
         ctk.CTkLabel(
             logo_frame,
-            text="🔐 Codebreaker",
+            text="🔐 Bitbreaker",
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=("gray10", "gray90")
         ).pack(anchor="w")
@@ -177,7 +177,7 @@ class CodebreakerDashboard(ctk.CTk):
         
         ctk.CTkLabel(
             header,
-            text="Welcome to Codebreaker",
+            text="Welcome to Bitbreaker",
             font=ctk.CTkFont(size=28, weight="bold"),
             text_color=("gray10", "gray90")
         ).grid(row=0, column=0, sticky="w")
@@ -646,7 +646,7 @@ class CodebreakerDashboard(ctk.CTk):
         
         ctk.CTkLabel(
             header,
-            text="Customize Codebreaker appearance and behavior",
+            text="Customize Bitbreaker appearance and behavior",
             font=ctk.CTkFont(size=14),
             text_color=("gray40", "gray60")
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
@@ -712,7 +712,7 @@ class CodebreakerDashboard(ctk.CTk):
         ).grid(row=0, column=0, padx=20, pady=(20, 16), sticky="w")
         
         about_text = (
-            "Codebreaker v1.0.0\n"
+            "Bitbreaker v1.0.0\n"
             "A cryptography dashboard for classical cipher decryption and analysis.\n\n"
             "Built with Python & CustomTkinter\n"
             "Designed for macOS with native look and feel"
